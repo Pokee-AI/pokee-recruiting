@@ -180,7 +180,50 @@ tr { cursor: pointer; }
   .form-grid { grid-template-columns: 1fr; }
   .form-group.full-width { grid-column: span 1; }
   .detail-grid { grid-template-columns: 1fr; }
+  .chat-panel { width: calc(100vw - 32px); right: 16px; bottom: 16px; height: calc(100vh - 32px); }
+  .chat-fab { right: 16px; bottom: 16px; }
 }
+
+/* Chat Agent Widget */
+.chat-fab { position:fixed; bottom:24px; right:24px; width:56px; height:56px; border-radius:50%; background:var(--accent); color:#fff; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(108,92,231,0.4); z-index:1000; transition:all 0.2s; }
+.chat-fab:hover { background:var(--accent-hover); transform:scale(1.05); }
+.chat-fab-active { background:var(--surface2); box-shadow:none; }
+.chat-panel { position:fixed; bottom:20px; right:24px; width:600px; height:calc(100vh - 40px); background:var(--surface); border:1px solid var(--border); border-radius:12px; display:flex; flex-direction:column; z-index:1000; box-shadow:0 8px 32px rgba(0,0,0,0.4); overflow:hidden; }
+.chat-panel.hidden { display:none; }
+.chat-header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--border); background:var(--surface2); }
+.chat-header span { font-size:14px; font-weight:600; color:var(--accent); }
+.chat-close { background:none; border:none; color:var(--text-dim); font-size:22px; cursor:pointer; padding:0 4px; line-height:1; }
+.chat-close:hover { color:var(--text); }
+.chat-messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+.chat-message { max-width:85%; padding:10px 14px; border-radius:12px; font-size:13px; line-height:1.5; word-wrap:break-word; }
+.chat-message.user { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px; }
+.chat-message.assistant { align-self:flex-start; background:var(--surface2); color:var(--text); border-bottom-left-radius:4px; }
+.chat-message.chat-error { color:var(--red); }
+.chat-typing { display:flex; gap:4px; padding:12px 16px; }
+.chat-typing span { width:8px; height:8px; border-radius:50%; background:var(--text-dim); animation:chatBounce 1.4s infinite ease-in-out both; }
+.chat-typing span:nth-child(1) { animation-delay:-0.32s; }
+.chat-typing span:nth-child(2) { animation-delay:-0.16s; }
+@keyframes chatBounce { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+.chat-input-area { display:flex; gap:8px; padding:12px; border-top:1px solid var(--border); background:var(--surface); }
+.chat-input-area input { flex:1; background:var(--surface2); border:1px solid var(--border); color:var(--text); padding:10px 14px; border-radius:8px; font-size:13px; outline:none; font-family:inherit; }
+.chat-input-area input:focus { border-color:var(--accent); }
+.chat-input-area input::placeholder { color:var(--text-dim); }
+.chat-send-btn { background:var(--accent); color:#fff; border:none; width:40px; height:40px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.chat-send-btn:hover { background:var(--accent-hover); }
+.chat-send-btn:disabled { opacity:0.5; cursor:not-allowed; }
+.chat-block { border:1px solid var(--border); border-radius:6px; margin-bottom:8px; overflow:hidden; font-size:12px; }
+.chat-block summary { padding:6px 10px; cursor:pointer; font-weight:600; color:var(--text-dim); background:var(--bg); user-select:none; list-style:none; display:flex; align-items:center; gap:6px; }
+.chat-block summary::before { content:'\\25B6'; font-size:9px; transition:transform 0.15s; }
+.chat-block[open] summary::before { transform:rotate(90deg); }
+.chat-block-content { padding:8px 10px; border-top:1px solid var(--border); max-height:240px; overflow-y:auto; }
+.chat-thinking-block summary { color:var(--text-dim); }
+.chat-thinking-block .chat-block-content { color:var(--text-dim); font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+.chat-tool-block summary { color:var(--blue); font-family:monospace; font-size:11px; }
+.tool-args-inline { color:var(--text-dim); font-weight:400; max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:bottom; }
+.chat-tool-block .chat-block-content pre { margin:0; font-size:11px; color:var(--text-dim); white-space:pre-wrap; word-break:break-word; line-height:1.4; }
+.chat-tool-spinner { padding:6px 10px; color:var(--text-dim); font-size:11px; font-style:italic; }
+.chat-status-line { color:var(--text-dim); font-size:12px; font-style:italic; padding:4px 0; }
+.chat-response-text { line-height:1.5; }
 
 </style>
 </head>
@@ -772,9 +815,123 @@ function openModal(id) { document.getElementById(id).classList.remove('hidden');
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+// ── Chat Agent Widget ──
+let chatMessages = [];
+let chatOpen = false;
+
+function chatScrollToBottom() {
+  const c = document.getElementById('chat-messages');
+  if (!c) return;
+  if (c.scrollHeight - c.scrollTop - c.clientHeight < 120) c.scrollTop = c.scrollHeight;
+}
+
+function initChatWidget() {
+  const fab = document.createElement('button');
+  fab.className = 'chat-fab'; fab.id = 'chat-fab';
+  fab.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  fab.onclick = toggleChat;
+  document.body.appendChild(fab);
+
+  const panel = document.createElement('div');
+  panel.className = 'chat-panel hidden'; panel.id = 'chat-panel';
+  panel.innerHTML = '<div class="chat-header"><span>Recruiting Agent</span><button class="chat-close" onclick="toggleChat()">&times;</button></div>'
+    + '<div class="chat-messages" id="chat-messages"><div class="chat-message assistant">Hi! I can help you search, add, update, or delete candidates. What would you like to do?</div></div>'
+    + '<div class="chat-input-area"><input type="text" id="chat-input" placeholder="Ask me anything about candidates..." onkeydown="if(event.key===\'Enter\'){event.preventDefault();sendChatMessage()}">'
+    + '<button class="chat-send-btn" id="chat-send" onclick="sendChatMessage()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg></button></div>';
+  document.body.appendChild(panel);
+}
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  const panel = document.getElementById('chat-panel');
+  const fab = document.getElementById('chat-fab');
+  if (chatOpen) { panel.classList.remove('hidden'); fab.classList.add('chat-fab-active'); document.getElementById('chat-input').focus(); }
+  else { panel.classList.add('hidden'); fab.classList.remove('chat-fab-active'); }
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const mc = document.getElementById('chat-messages');
+  const userDiv = document.createElement('div'); userDiv.className = 'chat-message user'; userDiv.textContent = text;
+  mc.appendChild(userDiv); mc.scrollTop = mc.scrollHeight;
+  chatMessages.push({ role: 'user', content: text });
+  const typing = document.createElement('div'); typing.className = 'chat-message assistant chat-typing';
+  typing.innerHTML = '<span></span><span></span><span></span>';
+  mc.appendChild(typing); mc.scrollTop = mc.scrollHeight;
+  input.disabled = true; document.getElementById('chat-send').disabled = true;
+
+  try {
+    const res = await fetch(API_BASE + '/api/agent', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ messages: chatMessages }) });
+    if (res.status === 401) { clearToken(); location.reload(); return; }
+    typing.remove();
+    const aMsg = document.createElement('div'); aMsg.className = 'chat-message assistant'; mc.appendChild(aMsg);
+    let fullText = '', dataModified = false, statusEl = null, responseEl = null;
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let sseBuffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split('\\n'); sseBuffer = lines.pop();
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        let parsed; try { parsed = JSON.parse(trimmed.slice(5).trim()); } catch { continue; }
+        if (parsed.type === 'thinking') {
+          if (statusEl) { statusEl.remove(); statusEl = null; }
+          const d = document.createElement('details'); d.className = 'chat-block chat-thinking-block';
+          d.innerHTML = '<summary>Thinking</summary><div class="chat-block-content">' + esc(parsed.content) + '</div>';
+          aMsg.appendChild(d); chatScrollToBottom();
+        } else if (parsed.type === 'tool_start') {
+          if (statusEl) { statusEl.remove(); statusEl = null; }
+          const d = document.createElement('details'); d.className = 'chat-block chat-tool-block';
+          d.innerHTML = '<summary>' + esc(parsed.name) + '(<span class="tool-args-inline">' + esc(JSON.stringify(parsed.args)) + '</span>)</summary><div class="chat-tool-spinner">Running...</div>';
+          aMsg.appendChild(d); chatScrollToBottom();
+        } else if (parsed.type === 'tool_result') {
+          const blocks = aMsg.querySelectorAll('.chat-tool-block');
+          const last = blocks[blocks.length - 1];
+          if (last) { const sp = last.querySelector('.chat-tool-spinner'); if (sp) sp.remove();
+            const r = document.createElement('div'); r.className = 'chat-block-content';
+            const pre = document.createElement('pre'); pre.textContent = JSON.stringify(parsed.result, null, 2);
+            r.appendChild(pre); last.appendChild(r); }
+          chatScrollToBottom();
+        } else if (parsed.type === 'text') {
+          if (statusEl) { statusEl.remove(); statusEl = null; }
+          fullText += parsed.content;
+          if (!responseEl) { responseEl = document.createElement('div'); responseEl.className = 'chat-response-text'; aMsg.appendChild(responseEl); }
+          responseEl.innerHTML = esc(fullText).replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>').replace(/\\n/g, '<br>');
+          chatScrollToBottom();
+        } else if (parsed.type === 'status') {
+          if (!statusEl) { statusEl = document.createElement('div'); statusEl.className = 'chat-status-line'; aMsg.appendChild(statusEl); }
+          statusEl.textContent = parsed.content; chatScrollToBottom();
+        } else if (parsed.type === 'done') {
+          if (statusEl) { statusEl.remove(); statusEl = null; }
+          dataModified = parsed.data_modified;
+        } else if (parsed.type === 'error') {
+          if (statusEl) { statusEl.remove(); statusEl = null; }
+          fullText += parsed.content || 'An error occurred.'; aMsg.classList.add('chat-error');
+          if (!responseEl) { responseEl = document.createElement('div'); responseEl.className = 'chat-response-text'; aMsg.appendChild(responseEl); }
+          responseEl.innerHTML = esc(fullText);
+        }
+      }
+    }
+    if (!fullText && !aMsg.querySelector('.chat-block')) { aMsg.innerHTML = '<em>No response</em>'; }
+    chatMessages.push({ role: 'assistant', content: fullText });
+    if (dataModified) { await loadData(); render(); }
+  } catch (e) {
+    typing.remove();
+    const err = document.createElement('div'); err.className = 'chat-message assistant chat-error'; err.textContent = 'Failed to get response.';
+    mc.appendChild(err); chatScrollToBottom();
+  } finally { input.disabled = false; document.getElementById('chat-send').disabled = false; input.focus(); }
+}
+
 // Init
 if (getToken()) showApp();
 else document.getElementById('login-screen').classList.remove('hidden');
+initChatWidget();
 
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
@@ -979,6 +1136,12 @@ export default {
         return json(results);
       }
 
+      // POST /api/agent
+      if (path === '/api/agent' && method === 'POST') {
+        const body = await request.json();
+        return handleAgent(env, body, corsHeaders);
+      }
+
       return json({ error: 'Not found' }, { status: 404 });
     } catch (err) {
       return new Response(JSON.stringify({ error: err.message }), {
@@ -987,3 +1150,204 @@ export default {
     }
   }
 };
+
+// ── Agent — AI-powered candidate management ──
+
+const MODEL_API_URL = 'http://136.112.61.95:8200/v1/chat/completions';
+
+const AGENT_SYSTEM_PROMPT = `You are a helpful recruiting assistant for Pokee. You help manage candidates through natural conversation.
+
+Each candidate has these fields:
+- name, email, phone, position, department
+- source (Email, R2 Storage, LinkedIn, Referral, Website, Other)
+- stage: Lead → Proceed to Interview → Interview 1 Complete → Interview 2 Complete → Decision
+- decision (Hire, Reject, On Hold) — only when stage is Decision
+- interviewer_1_name, interviewer_1_email, interviewer_2_name, interviewer_2_email
+- notes, applied_date, resume_url, resume_filename
+
+Guidelines:
+- When adding a candidate, only name is required. Default stage to "Lead".
+- When updating, search first to get the ID, then update only fields mentioned.
+- When deleting, search first to confirm which candidate.
+- Be concise and conversational. Format results clearly.
+- If search returns multiple matches, ask the user to clarify.`;
+
+const AGENT_TOOLS = [
+  { type: 'function', function: { name: 'search_candidates', description: 'Search for candidates by keyword. Returns matches with IDs and key details.', parameters: { type: 'object', properties: { query: { type: 'string', description: 'Search keyword for name, email, position, department, etc.' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'get_candidate_details', description: 'Get full details for a candidate by ID, including feedback.', parameters: { type: 'object', properties: { candidate_id: { type: 'number', description: 'The candidate ID' } }, required: ['candidate_id'] } } },
+  { type: 'function', function: { name: 'add_candidate', description: 'Add a new candidate. Only name is required.', parameters: { type: 'object', properties: { name: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' }, position: { type: 'string' }, department: { type: 'string' }, source: { type: 'string', enum: ['Email', 'R2 Storage', 'LinkedIn', 'Referral', 'Website', 'Other'] }, stage: { type: 'string', enum: ['Lead', 'Proceed to Interview', 'Interview 1 Complete', 'Interview 2 Complete', 'Decision'] }, interviewer_1_name: { type: 'string' }, interviewer_1_email: { type: 'string' }, interviewer_2_name: { type: 'string' }, interviewer_2_email: { type: 'string' }, notes: { type: 'string' } }, required: ['name'] } } },
+  { type: 'function', function: { name: 'update_candidate', description: 'Update fields on an existing candidate. Only provided fields are changed.', parameters: { type: 'object', properties: { candidate_id: { type: 'number', description: 'Candidate ID (use search_candidates to find)' }, name: { type: 'string' }, email: { type: 'string' }, phone: { type: 'string' }, position: { type: 'string' }, department: { type: 'string' }, source: { type: 'string' }, stage: { type: 'string', enum: ['Lead', 'Proceed to Interview', 'Interview 1 Complete', 'Interview 2 Complete', 'Decision'] }, decision: { type: 'string', enum: ['', 'Hire', 'Reject', 'On Hold'] }, interviewer_1_name: { type: 'string' }, interviewer_1_email: { type: 'string' }, interviewer_2_name: { type: 'string' }, interviewer_2_email: { type: 'string' }, notes: { type: 'string' } }, required: ['candidate_id'] } } },
+  { type: 'function', function: { name: 'delete_candidate', description: 'Permanently delete a candidate and all feedback. Cannot be undone.', parameters: { type: 'object', properties: { candidate_id: { type: 'number', description: 'Candidate ID to delete' } }, required: ['candidate_id'] } } }
+];
+
+function handleAgent(env, body, corsHeaders) {
+  const { messages } = body;
+  if (!messages || !messages.length) return new Response(JSON.stringify({ error: 'No messages' }), { headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const sendSSE = (type, data = {}) => writer.write(encoder.encode(`data: ${JSON.stringify({ type, ...data })}\n\n`));
+
+  processAgent(env, messages, sendSSE).catch(err => sendSSE('error', { content: err.message || 'Internal error' })).finally(() => writer.close());
+
+  return new Response(readable, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...corsHeaders } });
+}
+
+async function processAgent(env, messages, sendSSE) {
+  const systemPrompt = AGENT_SYSTEM_PROMPT;
+  let conversationMessages = [{ role: 'system', content: systemPrompt }, ...messages.map(m => ({ role: m.role, content: m.content }))];
+  let dataModified = false;
+
+  for (let i = 0; i < 10; i++) {
+    sendSSE('status', { content: i === 0 ? 'Thinking...' : 'Processing...' });
+
+    const response = await fetch(MODEL_API_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'pokee-isaac', messages: conversationMessages, tools: AGENT_TOOLS, max_tokens: 4096, stream: true })
+    });
+
+    if (!response.ok) { sendSSE('error', { content: `Model API error: ${response.status}` }); sendSSE('done', { data_modified: dataModified }); return; }
+
+    const accumulated = await accumulateStream(response.body);
+    const rawContent = accumulated.content || '';
+    const { thinkingText, cleanText, toolCalls: contentToolCalls } = parseModelContent(rawContent);
+    const allThinking = [accumulated.reasoningContent, thinkingText].filter(Boolean).join('\n');
+
+    if (allThinking) sendSSE('thinking', { content: allThinking });
+
+    // OpenAI-style tool_calls
+    if (accumulated.toolCalls.length > 0) {
+      conversationMessages.push({ role: 'assistant', content: accumulated.content || null, tool_calls: accumulated.toolCalls });
+      for (const tc of accumulated.toolCalls) {
+        const fn = tc.function.name; let args; try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
+        sendSSE('tool_start', { name: fn, args });
+        let r; try { r = await executeTool(env.DB, fn, args); if (['add_candidate','update_candidate','delete_candidate'].includes(fn)) dataModified = true; } catch (e) { r = { error: e.message }; }
+        sendSSE('tool_result', { name: fn, result: r });
+        conversationMessages.push({ role: 'tool', tool_call_id: tc.id, content: JSON.stringify(r) });
+      }
+      continue;
+    }
+
+    // Content-based <tool_call> XML
+    if (contentToolCalls.length > 0) {
+      conversationMessages.push({ role: 'assistant', content: rawContent });
+      for (const tc of contentToolCalls) {
+        sendSSE('tool_start', { name: tc.name, args: tc.args });
+        let r; try { r = await executeTool(env.DB, tc.name, tc.args); if (['add_candidate','update_candidate','delete_candidate'].includes(tc.name)) dataModified = true; } catch (e) { r = { error: e.message }; }
+        sendSSE('tool_result', { name: tc.name, result: r });
+        conversationMessages.push({ role: 'user', content: `<tool_response>\n${JSON.stringify(r)}\n</tool_response>` });
+      }
+      continue;
+    }
+
+    if (cleanText) sendSSE('text', { content: cleanText });
+    sendSSE('done', { data_modified: dataModified });
+    return;
+  }
+  sendSSE('text', { content: 'The request took too many steps.' });
+  sendSSE('done', { data_modified: dataModified });
+}
+
+async function accumulateStream(body) {
+  const reader = body.getReader(); const decoder = new TextDecoder();
+  let sseBuffer = '', content = '', reasoningContent = '', toolCalls = [];
+  while (true) {
+    const { done, value } = await reader.read(); if (done) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+    const lines = sseBuffer.split('\n'); sseBuffer = lines.pop();
+    for (const line of lines) {
+      const trimmed = line.trim(); if (!trimmed.startsWith('data:')) continue;
+      const data = trimmed.slice(5).trim(); if (data === '[DONE]') continue;
+      let parsed; try { parsed = JSON.parse(data); } catch { continue; }
+      const delta = parsed.choices?.[0]?.delta; if (!delta) continue;
+      if (delta.reasoning_content != null) { reasoningContent += delta.reasoning_content; continue; }
+      if (delta.content != null) content += delta.content;
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0;
+          if (!toolCalls[idx]) toolCalls[idx] = { id: '', type: 'function', function: { name: '', arguments: '' } };
+          if (tc.id) toolCalls[idx].id = tc.id;
+          if (tc.function?.name) toolCalls[idx].function.name = tc.function.name;
+          if (tc.function?.arguments) toolCalls[idx].function.arguments += tc.function.arguments;
+        }
+      }
+    }
+  }
+  toolCalls = toolCalls.filter(tc => tc && tc.function.name);
+  return { content, reasoningContent, toolCalls };
+}
+
+function parseModelContent(content) {
+  let text = content, thinkingText = '';
+  const firstClose = text.indexOf('</think>');
+  if (firstClose !== -1) { thinkingText = text.slice(0, firstClose).replace(/^<think>\s*/, '').trim(); text = text.slice(firstClose + 8); }
+  text = text.replace(/<think>([\s\S]*?)<\/think>/g, (_, inner) => { thinkingText += (thinkingText ? '\n\n' : '') + inner.trim(); return ''; });
+
+  const toolCalls = [];
+  const re = /<tool_call>\s*<function=(\w+)>([\s\S]*?)<\/function>\s*<\/tool_call>/g;
+  let m; while ((m = re.exec(text)) !== null) {
+    const args = {}; const pr = /<parameter=(\w+)>([\s\S]*?)<\/parameter>/g; let pm;
+    while ((pm = pr.exec(m[2])) !== null) { let v = pm[2].trim(); if (/^\d+$/.test(v)) v = Number(v); else { try { v = JSON.parse(v); } catch {} } args[pm[1]] = v; }
+    if (args.id !== undefined && args.candidate_id === undefined) { args.candidate_id = args.id; delete args.id; }
+    toolCalls.push({ name: m[1], args });
+  }
+  return { thinkingText, cleanText: text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim(), toolCalls };
+}
+
+async function executeTool(db, name, input) {
+  switch (name) {
+    case 'search_candidates': return execSearchCandidates(db, input);
+    case 'get_candidate_details': return execGetCandidateDetails(db, input);
+    case 'add_candidate': return execAddCandidate(db, input);
+    case 'update_candidate': return execUpdateCandidate(db, input);
+    case 'delete_candidate': return execDeleteCandidate(db, input);
+    default: return { error: `Unknown tool: ${name}` };
+  }
+}
+
+async function execSearchCandidates(db, { query }) {
+  const q = `%${query}%`;
+  const { results } = await db.prepare(`SELECT id, name, email, position, department, stage, decision, source, applied_date FROM candidates
+    WHERE name LIKE ?1 OR email LIKE ?1 OR position LIKE ?1 OR department LIKE ?1 OR source LIKE ?1 OR notes LIKE ?1 ORDER BY updated_at DESC LIMIT 20`).bind(q).all();
+  if (!results.length) return { message: 'No candidates found matching "' + query + '"', results: [] };
+  return { message: `Found ${results.length} candidate(s)`, results: results.map(r => ({ id: r.id, name: r.name, email: r.email, position: r.position, department: r.department, stage: r.stage, decision: r.decision || '', source: r.source, applied_date: r.applied_date })) };
+}
+
+async function execGetCandidateDetails(db, { candidate_id }) {
+  const c = await db.prepare('SELECT * FROM candidates WHERE id = ?').bind(candidate_id).first();
+  if (!c) return { error: 'Candidate not found with ID ' + candidate_id };
+  const { results: feedback } = await db.prepare('SELECT * FROM feedback WHERE candidate_id = ? ORDER BY created_at DESC').bind(candidate_id).all();
+  return { ...c, feedback: feedback.map(f => ({ interviewer: f.interviewer_name, role: f.interviewer_role, rating: f.rating, technical: f.technical_score, cultural: f.cultural_score, communication: f.communication_score, recommendation: f.recommendation, strengths: f.strengths, weaknesses: f.weaknesses, comments: f.comments })) };
+}
+
+async function execAddCandidate(db, input) {
+  const result = await db.prepare(
+    `INSERT INTO candidates (name, email, phone, position, department, source, stage, interviewer_1_name, interviewer_1_email, interviewer_2_name, interviewer_2_email, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(input.name, input.email || '', input.phone || '', input.position || '', input.department || '', input.source || '', input.stage || 'Lead',
+    input.interviewer_1_name || '', input.interviewer_1_email || '', input.interviewer_2_name || '', input.interviewer_2_email || '', input.notes || '').run();
+  return { success: true, candidate_id: result.meta.last_row_id, name: input.name };
+}
+
+async function execUpdateCandidate(db, input) {
+  const { candidate_id, ...fields } = input;
+  const existing = await db.prepare('SELECT id FROM candidates WHERE id = ?').bind(candidate_id).first();
+  if (!existing) return { error: 'Candidate not found with ID ' + candidate_id };
+  const colMap = { name:'name', email:'email', phone:'phone', position:'position', department:'department', source:'source', stage:'stage', decision:'decision',
+    interviewer_1_name:'interviewer_1_name', interviewer_1_email:'interviewer_1_email', interviewer_2_name:'interviewer_2_name', interviewer_2_email:'interviewer_2_email', notes:'notes' };
+  const sets = [], vals = [];
+  for (const [k, v] of Object.entries(fields)) { if (colMap[k]) { sets.push(`${colMap[k]} = ?`); vals.push(v); } }
+  if (!sets.length) return { error: 'No valid fields to update' };
+  sets.push("updated_at = datetime('now')");
+  vals.push(candidate_id);
+  await db.prepare(`UPDATE candidates SET ${sets.join(', ')} WHERE id = ?`).bind(...vals).run();
+  const updated = await db.prepare('SELECT id, name, email, position, stage, decision FROM candidates WHERE id = ?').bind(candidate_id).first();
+  return { success: true, message: 'Candidate updated', candidate: updated };
+}
+
+async function execDeleteCandidate(db, { candidate_id }) {
+  const c = await db.prepare('SELECT name FROM candidates WHERE id = ?').bind(candidate_id).first();
+  if (!c) return { error: 'Candidate not found with ID ' + candidate_id };
+  await db.prepare('DELETE FROM candidates WHERE id = ?').bind(candidate_id).run();
+  return { success: true, message: `Deleted "${c.name}" (ID: ${candidate_id})` };
+}
