@@ -1,6 +1,7 @@
 name = "pokee-recruiting-api"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+account_id = "ef7f9a82de091b3266859e105cae7f45"
 
 [[d1_databases]]
 binding = "DB"
